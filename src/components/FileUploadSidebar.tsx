@@ -1,0 +1,127 @@
+import { Upload, File, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useState } from "react";
+
+interface UploadedFile {
+  id: string;
+  name: string;
+  size: string;
+}
+
+export const FileUploadSidebar = () => {
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(e.target.files);
+    }
+  };
+
+  const handleFiles = (fileList: FileList) => {
+    const newFiles: UploadedFile[] = Array.from(fileList).map((file) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: (file.size / 1024).toFixed(2) + " KB",
+    }));
+    setFiles((prev) => [...prev, ...newFiles]);
+  };
+
+  const removeFile = (id: string) => {
+    setFiles((prev) => prev.filter((file) => file.id !== id));
+  };
+
+  return (
+    <div className="w-80 bg-sidebar border-r border-sidebar-border h-screen flex flex-col">
+      <div className="p-6 border-b border-sidebar-border">
+        <h2 className="text-xl font-semibold text-sidebar-foreground">Study Materials</h2>
+        <p className="text-sm text-muted-foreground mt-1">Upload your documents</p>
+      </div>
+
+      <div className="p-4 flex-1 overflow-y-auto">
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            dragActive
+              ? "border-primary bg-primary/10"
+              : "border-border hover:border-primary/50"
+          }`}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
+          <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+          <p className="text-sm text-foreground mb-2">
+            Drag & drop your files here
+          </p>
+          <p className="text-xs text-muted-foreground mb-4">
+            PDF, DOCX, TXT up to 10MB
+          </p>
+          <input
+            type="file"
+            id="file-upload"
+            className="hidden"
+            multiple
+            onChange={handleFileInput}
+            accept=".pdf,.docx,.txt"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => document.getElementById("file-upload")?.click()}
+          >
+            Browse Files
+          </Button>
+        </div>
+
+        {files.length > 0 && (
+          <div className="mt-6 space-y-2">
+            <h3 className="text-sm font-medium text-foreground mb-3">Uploaded Files</h3>
+            {files.map((file) => (
+              <Card key={file.id} className="p-3 bg-card border-border">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <File className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground truncate">{file.name}</p>
+                      <p className="text-xs text-muted-foreground">{file.size}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFile(file.id)}
+                    className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

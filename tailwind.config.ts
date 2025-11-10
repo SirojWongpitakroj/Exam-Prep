@@ -57,6 +57,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        quiz: {
+          DEFAULT: "hsl(var(--quiz-background))",
+        },
+        chat: {
+          user: "hsl(var(--chat-user))",
+          assistant: "hsl(var(--chat-assistant))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
