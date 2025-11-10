@@ -58,14 +58,7 @@ export const ChatInterface = () => {
   ];
 
   return (
-    <div className="flex-1 flex flex-col h-screen bg-background">
-      <div className="border-b border-border p-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h1 className="text-lg font-semibold text-foreground">AI Study Assistant</h1>
-        </div>
-      </div>
-
+    <div className="flex-1 flex flex-col h-full bg-background">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 1 && (
           <div className="mb-6">

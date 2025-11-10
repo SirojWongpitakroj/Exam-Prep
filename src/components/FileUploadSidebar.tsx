@@ -1,4 +1,4 @@
-import { Upload, File, X } from "lucide-react";
+import { Upload, File, X, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useState } from "react";
@@ -9,7 +9,12 @@ interface UploadedFile {
   size: string;
 }
 
-export const FileUploadSidebar = () => {
+interface FileUploadSidebarProps {
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+}
+
+export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadSidebarProps) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
@@ -52,11 +57,36 @@ export const FileUploadSidebar = () => {
     setFiles((prev) => prev.filter((file) => file.id !== id));
   };
 
+  if (isCollapsed) {
+    return (
+      <div className="w-12 bg-sidebar border-r border-sidebar-border h-screen flex flex-col items-center py-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapse}
+          className="h-8 w-8 p-0 hover:bg-sidebar-accent"
+        >
+          <ChevronLeft className="w-4 h-4 rotate-180" />
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-80 bg-sidebar border-r border-sidebar-border h-screen flex flex-col">
-      <div className="p-6 border-b border-sidebar-border">
-        <h2 className="text-xl font-semibold text-sidebar-foreground">Study Materials</h2>
-        <p className="text-sm text-muted-foreground mt-1">Upload your documents</p>
+    <div className="bg-sidebar border-r border-sidebar-border h-screen flex flex-col w-full">
+      <div className="p-6 border-b border-sidebar-border flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-sidebar-foreground">Study Materials</h2>
+          <p className="text-sm text-muted-foreground mt-1">Upload your documents</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapse}
+          className="h-8 w-8 p-0 hover:bg-sidebar-accent"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
       </div>
 
       <div className="p-4 flex-1 overflow-y-auto">
