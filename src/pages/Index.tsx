@@ -2,17 +2,16 @@ import { FileUploadSidebar } from "@/components/FileUploadSidebar";
 import { ChatInterface } from "@/components/ChatInterface";
 import { QuizPanel } from "@/components/QuizPanel";
 import { Button } from "@/components/ui/button";
-import { ListChecks, Sparkles, PanelLeftOpen } from "lucide-react";
+import { Sparkles, PanelLeftOpen, User, Zap } from "lucide-react";
 import { useState } from "react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { ImperativePanelHandle } from "react-resizable-panels";
+import { Link } from "react-router-dom";
 
 const Index = () => {
-  const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const handleSidebarResize = (size: number) => {
@@ -59,22 +58,33 @@ const Index = () => {
                 <Sparkles className="w-5 h-5 text-primary" />
                 <h1 className="text-lg font-semibold text-foreground">Exam Prep Assistant</h1>
               </div>
-              {!isQuizOpen && (
+              <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => setIsQuizOpen(true)}
+                  asChild
+                  variant="outline"
                   size="default"
+                  className="gap-2"
                 >
-                  <ListChecks className="w-4 h-4 mr-2" />
-                  Open Quiz
+                  <Link to="/pricing">
+                    <Zap className="w-4 h-4" />
+                    <span>Upgrade</span>
+                  </Link>
                 </Button>
-              )}
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                >
+                  <Link to="/profile">
+                    <User className="w-5 h-5" />
+                  </Link>
+                </Button>
+              </div>
             </div>
             <ChatInterface />
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
-      
-      <QuizPanel isOpen={isQuizOpen} onClose={() => setIsQuizOpen(false)} />
     </div>
   );
 };

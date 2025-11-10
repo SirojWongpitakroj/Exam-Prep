@@ -1,12 +1,16 @@
 import { Upload, File, X, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface UploadedFile {
   id: string;
   name: string;
   size: string;
+  checked: boolean;
+  file: File;
 }
 
 interface FileUploadSidebarProps {
@@ -44,13 +48,43 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
     }
   };
 
-  const handleFiles = (fileList: FileList) => {
+  const handleFiles = async (fileList: FileList) => {
     const newFiles: UploadedFile[] = Array.from(fileList).map((file) => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       size: (file.size / 1024).toFixed(2) + " KB",
+      checked: true,
+      file: file,
     }));
     setFiles((prev) => [...prev, ...newFiles]);
+
+    // Send files to webhook
+    for (const uploadedFile of newFiles) {
+      try {
+        const formData = new FormData();
+        formData.append('file', uploadedFile.file);
+        formData.append('fileName', uploadedFile.name);
+        formData.append('fileSize', uploadedFile.size);
+        
+        await fetch('http://localhost:5678/webhook-test/bdbb3110-5af2-482e-804b-1d20b0e0dfe8', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        toast.success(`${uploadedFile.name} uploaded successfully`);
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        toast.error(`Failed to upload ${uploadedFile.name}`);
+      }
+    }
+  };
+
+  const toggleFileCheck = (id: string) => {
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.id === id ? { ...file, checked: !file.checked } : file
+      )
+    );
   };
 
   const removeFile = (id: string) => {
@@ -132,6 +166,11 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
               <Card key={file.id} className="p-3 bg-card border-border">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <Checkbox
+                      checked={file.checked}
+                      onCheckedChange={() => toggleFileCheck(file.id)}
+                      className="mt-0.5 flex-shrink-0"
+                    />
                     <File className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-foreground truncate">{file.name}</p>
