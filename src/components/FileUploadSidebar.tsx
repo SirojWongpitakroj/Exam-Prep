@@ -66,7 +66,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         formData.append('fileName', uploadedFile.name);
         formData.append('fileSize', uploadedFile.size);
         
-        await fetch('http://localhost:5678/webhook-test/bdbb3110-5af2-482e-804b-1d20b0e0dfe8', {
+        await fetch('https://siroj6253.app.n8n.cloud/webhook-test/upload-file', {
           method: 'POST',
           body: formData,
         });
