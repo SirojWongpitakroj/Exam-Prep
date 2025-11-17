@@ -3,7 +3,7 @@ import { ChatInterface } from "@/components/ChatInterface";
 import { QuizPanel } from "@/components/QuizPanel";
 import { Button } from "@/components/ui/button";
 import { Sparkles, PanelLeftOpen, User, Zap } from "lucide-react";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -13,10 +13,18 @@ import { Link } from "react-router-dom";
 
 const Index = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const sidebarPanelRef = React.useRef<any>(null);
 
-  const handleSidebarResize = (size: number) => {
-    // Auto-collapse when resized below 10%
-    if (size < 10 && !isSidebarCollapsed) {
+  const handleToggleSidebar = () => {
+    if (isSidebarCollapsed) {
+      setIsSidebarCollapsed(false);
+      // Wait for state update, then resize to 25%
+      setTimeout(() => {
+        if (sidebarPanelRef.current) {
+          sidebarPanelRef.current.resize(25);
+        }
+      }, 0);
+    } else {
       setIsSidebarCollapsed(true);
     }
   };
@@ -24,21 +32,24 @@ const Index = () => {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <ResizablePanelGroup direction="horizontal">
+        <ResizablePanel 
+          ref={sidebarPanelRef}
+          defaultSize={25} 
+          minSize={isSidebarCollapsed ? 0 : 15} 
+          maxSize={isSidebarCollapsed ? 0 : 40}
+          collapsible={true}
+          collapsedSize={0}
+        >
+          {!isSidebarCollapsed && (
+            <FileUploadSidebar
+              isCollapsed={isSidebarCollapsed}
+              onToggleCollapse={() => setIsSidebarCollapsed(true)}
+            />
+          )}
+        </ResizablePanel>
+        
         {!isSidebarCollapsed && (
-          <>
-            <ResizablePanel 
-              defaultSize={20} 
-              minSize={10} 
-              maxSize={35}
-              onResize={handleSidebarResize}
-            >
-              <FileUploadSidebar
-                isCollapsed={isSidebarCollapsed}
-                onToggleCollapse={() => setIsSidebarCollapsed(true)}
-              />
-            </ResizablePanel>
-            <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
-          </>
+          <ResizableHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
         )}
         
         <ResizablePanel defaultSize={80}>
@@ -49,7 +60,7 @@ const Index = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setIsSidebarCollapsed(false)}
+                    onClick={handleToggleSidebar}
                     className="mr-2 h-9 w-9 p-0"
                   >
                     <PanelLeftOpen className="w-5 h-5" />

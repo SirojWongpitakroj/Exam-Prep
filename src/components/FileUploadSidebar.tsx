@@ -2,19 +2,51 @@ import { Upload, File, X, ChevronLeft, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useNavigate } from "react-router-dom";
+import { saveFileToFirestore, deleteFileFromFirestore } from "@/lib/firestoreService";
 
 interface UploadedFile {
   id: string;
   name: string;
   size: string;
+  fileType: string;
   checked: boolean;
-  file: File;
+  file?: File; // Optional - only present during upload
   uploading?: boolean;
   uploadSuccess?: boolean;
+  limitExceeded?: boolean;
+  firestoreId?: string; // Firestore document ID
 }
+
+// Interface for persisted file data (without File object)
+interface PersistedFileData {
+  id: string;
+  name: string;
+  size: string;
+  fileType: string;
+  checked: boolean;
+  uploadSuccess: boolean;
+}
+
+// Free tier limits
+const FREE_TIER_LIMITS = {
+  pdf: { maxFiles: 3, maxSizeMB: 5 },
+  image: { maxFiles: 5, maxSizeMB: 1 },
+  csv: { maxFiles: 1, maxRows: 500 },
+};
 
 interface FileUploadSidebarProps {
   isCollapsed: boolean;
@@ -24,7 +56,65 @@ interface FileUploadSidebarProps {
 export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadSidebarProps) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Get localStorage key for current user
+  const getUserFilesKey = () => {
+    return user?.id ? `uploaded_files_${user.id}` : null;
+  };
+
+  // Save files to localStorage
+  const saveFilesToStorage = (filesToSave: UploadedFile[]) => {
+    const key = getUserFilesKey();
+    if (!key) return;
+
+    const persistedData: PersistedFileData[] = filesToSave
+      .filter(f => f.uploadSuccess) // Only save successfully uploaded files
+      .map(f => ({
+        id: f.id,
+        name: f.name,
+        size: f.size,
+        fileType: f.fileType,
+        checked: f.checked,
+        uploadSuccess: f.uploadSuccess || false,
+      }));
+
+    localStorage.setItem(key, JSON.stringify(persistedData));
+  };
+
+  // Load files from localStorage
+  const loadFilesFromStorage = (): UploadedFile[] => {
+    const key = getUserFilesKey();
+    if (!key) return [];
+
+    try {
+      const stored = localStorage.getItem(key);
+      if (!stored) return [];
+
+      const persistedData: PersistedFileData[] = JSON.parse(stored);
+      return persistedData.map(data => ({
+        ...data,
+        file: undefined, // No File object for persisted files
+        uploading: false,
+        limitExceeded: false,
+      }));
+    } catch (error) {
+      console.error('Error loading files from storage:', error);
+      return [];
+    }
+  };
+
+  // Load persisted files on mount and when user changes
+  useEffect(() => {
+    if (user?.id) {
+      const persistedFiles = loadFilesFromStorage();
+      setFiles(persistedFiles);
+    } else {
+      setFiles([]);
+    }
+  }, [user?.id]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -52,20 +142,133 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
     }
   };
 
+  // Helper function to get file type category from File object
+  const getFileCategory = (file: File): 'pdf' | 'image' | 'csv' | 'other' => {
+    const mimeType = file.type.toLowerCase();
+    if (mimeType === 'application/pdf') return 'pdf';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType === 'text/csv' || file.name.endsWith('.csv')) return 'csv';
+    return 'other';
+  };
+
+  // Helper function to get file type category from fileType string
+  const getFileCategoryFromType = (fileType: string): 'pdf' | 'image' | 'csv' | 'other' => {
+    const mimeType = fileType.toLowerCase();
+    if (mimeType === 'application/pdf') return 'pdf';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType === 'text/csv') return 'csv';
+    return 'other';
+  };
+
+  // Check if file upload would exceed free tier limits
+  const checkFreeTierLimits = (newFile: File): { allowed: boolean; reason?: string } => {
+    // Pro users have no limits
+    if (user?.plan === 'pro') {
+      return { allowed: true };
+    }
+
+    const category = getFileCategory(newFile);
+    const fileSizeMB = newFile.size / (1024 * 1024);
+
+    // Count existing files by category
+    const existingFilesByCategory = files.filter(f => 
+      f.uploadSuccess && getFileCategoryFromType(f.fileType) === category
+    );
+
+    if (category === 'pdf') {
+      // Check file count
+      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.pdf.maxFiles) {
+        return { 
+          allowed: false, 
+          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.pdf.maxFiles} PDF files` 
+        };
+      }
+      // Check file size
+      if (fileSizeMB > FREE_TIER_LIMITS.pdf.maxSizeMB) {
+        return { 
+          allowed: false, 
+          reason: `PDF files must be under ${FREE_TIER_LIMITS.pdf.maxSizeMB}MB on free plan` 
+        };
+      }
+    } else if (category === 'image') {
+      // Check file count
+      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.image.maxFiles) {
+        return { 
+          allowed: false, 
+          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.image.maxFiles} image files` 
+        };
+      }
+      // Check file size
+      if (fileSizeMB > FREE_TIER_LIMITS.image.maxSizeMB) {
+        return { 
+          allowed: false, 
+          reason: `Image files must be under ${FREE_TIER_LIMITS.image.maxSizeMB}MB on free plan` 
+        };
+      }
+    } else if (category === 'csv') {
+      // Check file count
+      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.csv.maxFiles) {
+        return { 
+          allowed: false, 
+          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.csv.maxFiles} CSV file` 
+        };
+      }
+      // Note: Row count check would need to parse CSV, skipping for now
+    }
+
+    return { allowed: true };
+  };
+
   const handleFiles = async (fileList: FileList) => {
-    const newFiles: UploadedFile[] = Array.from(fileList).map((file) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      size: (file.size / 1024).toFixed(2) + " KB",
-      checked: false,
-      file: file,
-      uploading: true,
-      uploadSuccess: false,
-    }));
+    let hasLimitExceeded = false;
+    
+    const newFiles: UploadedFile[] = Array.from(fileList).map((file) => {
+      // Check free tier limits for each file
+      const limitCheck = checkFreeTierLimits(file);
+      
+      if (!limitCheck.allowed) {
+        hasLimitExceeded = true;
+        // Mark file as limit exceeded
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          name: file.name,
+          size: (file.size / 1024).toFixed(2) + " KB",
+          fileType: file.type,
+          checked: false,
+          file: file,
+          uploading: false,
+          uploadSuccess: false,
+          limitExceeded: true,
+        };
+      }
+      
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        name: file.name,
+        size: (file.size / 1024).toFixed(2) + " KB",
+        fileType: file.type,
+        checked: false,
+        file: file,
+        uploading: true,
+        uploadSuccess: false,
+        limitExceeded: false,
+      };
+    });
+    
     setFiles((prev) => [...prev, ...newFiles]);
 
-    // Send files to webhook
+    // Show upgrade dialog if any file exceeded limits
+    if (hasLimitExceeded) {
+      setShowUpgradeDialog(true);
+    }
+
+    // Send files to webhook (only non-exceeded files)
     for (const uploadedFile of newFiles) {
+      // Skip files that exceeded limits
+      if (uploadedFile.limitExceeded) {
+        continue;
+      }
+      
       try {
         const formData = new FormData();
         formData.append('file', uploadedFile.file);
@@ -75,7 +278,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         formData.append('user_id', user?.id || 'guest');
         formData.append('userPlan', user?.plan || 'free');
         
-        const response = await fetch('https://siroj6253.app.n8n.cloud/webhook-test/5b30d074-175b-4407-90b0-e638ad0f5026', {
+        const response = await fetch('https://siroj6253.app.n8n.cloud/webhook/5b30d074-175b-4407-90b0-e638ad0f5026', {
           method: 'POST',
           body: formData,
         });
@@ -83,15 +286,44 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         const result = await response.json();
         
         if (result.success) {
-          // Update file status to success
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.id === uploadedFile.id
-                ? { ...f, uploading: false, uploadSuccess: true, checked: true }
-                : f
-            )
-          );
-          toast.success(`${uploadedFile.name} uploaded successfully`);
+          // Save to Firestore
+          try {
+            const fileSizeMB = uploadedFile.file ? uploadedFile.file.size / (1024 * 1024) : 0;
+            const firestoreId = await saveFileToFirestore({
+              fileName: uploadedFile.name,
+              fileSize: uploadedFile.size,
+              fileType: uploadedFile.fileType,
+              user_id: user?.id || 'guest',
+              userPlan: user?.plan || 'free',
+              fileSizeMB,
+            });
+            
+            // Update file status to success with Firestore ID
+            setFiles((prev) => {
+              const updatedFiles = prev.map((f) =>
+                f.id === uploadedFile.id
+                  ? { ...f, uploading: false, uploadSuccess: true, checked: true, firestoreId }
+                  : f
+              );
+              // Save to localStorage after successful upload
+              saveFilesToStorage(updatedFiles);
+              return updatedFiles;
+            });
+            toast.success(`${uploadedFile.name} uploaded successfully`);
+          } catch (firestoreError) {
+            console.error('Error saving to Firestore:', firestoreError);
+            // Still mark as success even if Firestore fails
+            setFiles((prev) => {
+              const updatedFiles = prev.map((f) =>
+                f.id === uploadedFile.id
+                  ? { ...f, uploading: false, uploadSuccess: true, checked: true }
+                  : f
+              );
+              saveFilesToStorage(updatedFiles);
+              return updatedFiles;
+            });
+            toast.success(`${uploadedFile.name} uploaded successfully`);
+          }
         } else {
           throw new Error('Upload failed');
         }
@@ -111,15 +343,34 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
   };
 
   const toggleFileCheck = (id: string) => {
-    setFiles((prev) =>
-      prev.map((file) =>
+    setFiles((prev) => {
+      const updatedFiles = prev.map((file) =>
         file.id === id ? { ...file, checked: !file.checked } : file
-      )
-    );
+      );
+      saveFilesToStorage(updatedFiles);
+      return updatedFiles;
+    });
   };
 
-  const removeFile = (id: string) => {
-    setFiles((prev) => prev.filter((file) => file.id !== id));
+  const removeFile = async (id: string) => {
+    // Find the file to get Firestore ID
+    const fileToRemove = files.find(f => f.id === id);
+    
+    // Delete from Firestore if it has a Firestore ID
+    if (fileToRemove?.firestoreId) {
+      try {
+        await deleteFileFromFirestore(fileToRemove.firestoreId);
+      } catch (error) {
+        console.error('Error deleting from Firestore:', error);
+      }
+    }
+    
+    // Update local state
+    setFiles((prev) => {
+      const updatedFiles = prev.filter((file) => file.id !== id);
+      saveFilesToStorage(updatedFiles);
+      return updatedFiles;
+    });
   };
 
   if (isCollapsed) {
@@ -215,7 +466,8 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
                         {file.size}
                         {file.uploading && " • Uploading..."}
                         {!file.uploading && file.uploadSuccess && " • Ready"}
-                        {!file.uploading && !file.uploadSuccess && " • Failed"}
+                        {!file.uploading && file.limitExceeded && " • Limit Exceeded"}
+                        {!file.uploading && !file.uploadSuccess && !file.limitExceeded && " • Failed"}
                       </p>
                     </div>
                   </div>
@@ -234,6 +486,30 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
           </div>
         )}
       </div>
+
+      {/* Upgrade Dialog */}
+      <AlertDialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Free Plan Limit Exceeded</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>You've reached the upload limits for the free plan:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>PDF: Maximum {FREE_TIER_LIMITS.pdf.maxFiles} files (each &lt; {FREE_TIER_LIMITS.pdf.maxSizeMB}MB)</li>
+                <li>Images: Maximum {FREE_TIER_LIMITS.image.maxFiles} files (each &lt; {FREE_TIER_LIMITS.image.maxSizeMB}MB)</li>
+                <li>CSV: Maximum {FREE_TIER_LIMITS.csv.maxFiles} file</li>
+              </ul>
+              <p className="pt-2">Upgrade to Pro for unlimited uploads!</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => navigate('/pricing')}>
+              View Plans
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

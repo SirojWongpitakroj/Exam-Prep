@@ -83,12 +83,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Sign out from Firebase
       await firebaseSignOut(auth);
       
-      // Clear local state
+      // Clear local state (but keep uploaded files in localStorage)
       localStorage.removeItem("isAuthenticated");
       localStorage.removeItem("userEmail");
       localStorage.removeItem("userName");
       localStorage.removeItem("userId");
       localStorage.removeItem("userPlan");
+      
+      // Note: We keep uploaded_files_{userId} in localStorage
+      // so files persist across login/logout sessions
+      
       setUser(null);
       setIsAuthenticated(false);
     } catch (error) {
