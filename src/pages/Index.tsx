@@ -53,8 +53,8 @@ const Index = () => {
         )}
         
         <ResizablePanel defaultSize={80}>
-          <div className="flex-1 flex flex-col h-full">
-            <div className="border-b border-border p-4 flex items-center justify-between">
+          <div className="flex flex-col h-full">
+            <div className="border-b border-border p-4 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {isSidebarCollapsed && (
                   <Button
@@ -92,7 +92,9 @@ const Index = () => {
                 </Button>
               </div>
             </div>
-            <ChatInterface />
+            <div className="flex-1 min-h-0">
+              <ChatInterface />
+            </div>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useFiles } from "@/contexts/FilesContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,6 +59,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
   const [dragActive, setDragActive] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const { user } = useAuth();
+  const { updateCheckedFiles } = useFiles();
   const navigate = useNavigate();
 
   // Get localStorage key for current user
@@ -115,6 +117,20 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
       setFiles([]);
     }
   }, [user?.id]);
+
+  // Update context whenever checked files change
+  useEffect(() => {
+    const checkedFilesList = files
+      .filter(f => f.checked && f.uploadSuccess)
+      .map(f => ({
+        fileName: f.name,
+        fileType: f.fileType,
+        fileSize: f.size,
+        firestoreId: f.firestoreId,
+      }));
+    
+    updateCheckedFiles(checkedFilesList);
+  }, [files, updateCheckedFiles]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();

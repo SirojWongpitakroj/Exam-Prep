@@ -151,3 +151,86 @@ export const checkFreeTierConstraints = async (
   }
 };
 
+// ============================================
+// CHAT MESSAGES FUNCTIONS
+// ============================================
+
+export interface ChatMessage {
+  id?: string; // Firestore doc ID
+  user_id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+}
+
+// Save a chat message to Firestore
+export const saveChatMessage = async (messageData: Omit<ChatMessage, 'id' | 'timestamp'>): Promise<string> => {
+  try {
+    const docRef = await addDoc(collection(db, "chat_messages"), {
+      ...messageData,
+      timestamp: Timestamp.now(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error("Error saving chat message to Firestore:", error);
+    throw error;
+  }
+};
+
+// Get all chat messages for a specific user
+export const getUserChatMessages = async (userId: string): Promise<ChatMessage[]> => {
+  try {
+    const q = query(
+      collection(db, "chat_messages"),
+      where("user_id", "==", userId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const messages: ChatMessage[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      messages.push({
+        id: doc.id,
+        user_id: data.user_id,
+        role: data.role,
+        content: data.content,
+        timestamp: data.timestamp?.toDate() || new Date(),
+      });
+    });
+    
+    // Sort by timestamp (oldest first)
+    return messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  } catch (error) {
+    console.error("Error getting user chat messages:", error);
+    throw error;
+  }
+};
+
+// Delete a chat message from Firestore
+export const deleteChatMessage = async (messageId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, "chat_messages", messageId));
+  } catch (error) {
+    console.error("Error deleting chat message from Firestore:", error);
+    throw error;
+  }
+};
+
+// Delete all chat messages for a user
+export const deleteAllUserChatMessages = async (userId: string): Promise<void> => {
+  try {
+    const messages = await getUserChatMessages(userId);
+    const deletePromises = messages.map(msg => {
+      if (msg.id) {
+        return deleteDoc(doc(db, "chat_messages", msg.id));
+      }
+      return Promise.resolve();
+    });
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error("Error deleting all user chat messages:", error);
+    throw error;
+  }
+};
+
