@@ -1,19 +1,21 @@
 import { FileUploadSidebar } from "@/components/FileUploadSidebar";
 import { ChatInterface } from "@/components/ChatInterface";
-import { QuizPanel } from "@/components/QuizPanel";
 import { Button } from "@/components/ui/button";
-import { Sparkles, PanelLeftOpen, User, Zap } from "lucide-react";
+import { Sparkles, PanelLeftOpen, User, Zap, BookOpen } from "lucide-react";
 import React, { useState } from "react";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuiz } from "@/contexts/QuizContext";
 
 const Index = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarPanelRef = React.useRef<any>(null);
+  const { hasActiveQuiz, currentQuiz } = useQuiz();
+  const navigate = useNavigate();
 
   const handleToggleSidebar = () => {
     if (isSidebarCollapsed) {
@@ -27,6 +29,10 @@ const Index = () => {
     } else {
       setIsSidebarCollapsed(true);
     }
+  };
+
+  const handleViewQuiz = () => {
+    navigate('/quiz');
   };
 
   return (
@@ -53,7 +59,7 @@ const Index = () => {
         )}
         
         <ResizablePanel defaultSize={80}>
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full relative">
             <div className="border-b border-border p-4 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {isSidebarCollapsed && (
@@ -68,6 +74,21 @@ const Index = () => {
                 )}
                 <Sparkles className="w-5 h-5 text-primary" />
                 <h1 className="text-lg font-semibold text-foreground">Exam Prep Assistant</h1>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleViewQuiz}
+                  className="text-white ml-3 gap-2 bg-gradient-to-r from-purple-400 to-pink-400 hover:from-purple-500 hover:to-pink-500 font-bold brightness-110"
+                  disabled={!hasActiveQuiz}
+                >
+                  <BookOpen className="w-4 h-4 text-white opacity-100" />
+                  <span className="text-white">View Quiz</span>
+                  {currentQuiz?.questions && (
+                    <span className="ml-1 text-xs text-white opacity-100">
+                      ({currentQuiz.questions.length})
+                    </span>
+                  )}
+                </Button>
               </div>
               <div className="flex items-center gap-2">
                 <Button

@@ -118,6 +118,39 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
     }
   }, [user?.id]);
 
+  // Delete all files when plan changes
+  useEffect(() => {
+    if (!user?.id || !user?.plan) return;
+
+    // Check if plan has changed
+    const storedPlan = localStorage.getItem(`user_plan_${user.id}`);
+    
+    if (storedPlan && storedPlan !== user.plan) {
+      console.log(`Plan changed from ${storedPlan} to ${user.plan}, clearing all files`);
+      
+      // Delete all files from Firestore
+      const deletePromises = files
+        .filter(f => f.firestoreId)
+        .map(f => deleteFileFromFirestore(f.firestoreId!));
+      
+      Promise.all(deletePromises).catch(error => {
+        console.error('Error deleting files from Firestore:', error);
+      });
+
+      // Clear local state and storage
+      setFiles([]);
+      const key = getUserFilesKey();
+      if (key) {
+        localStorage.removeItem(key);
+      }
+
+      toast.info(`Plan changed to ${user.plan}. All uploaded files have been cleared.`);
+    }
+
+    // Store current plan
+    localStorage.setItem(`user_plan_${user.id}`, user.plan);
+  }, [user?.plan, user?.id]);
+
   // Update context whenever checked files change
   useEffect(() => {
     const checkedFilesList = files
@@ -237,8 +270,25 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
 
   const handleFiles = async (fileList: FileList) => {
     let hasLimitExceeded = false;
+    let hasInvalidFileType = false;
+    
+    // Allowed file types for all users
+    const ALLOWED_TYPES = [
+      'application/pdf',
+      'text/csv',
+      'image/png',
+      'image/jpeg',
+      'image/jpg'
+    ];
     
     const newFiles: UploadedFile[] = Array.from(fileList).map((file) => {
+      // Check file type first (for all users)
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        hasInvalidFileType = true;
+        toast.error(`${file.name} - Invalid file type. Only PDF, CSV, PNG, and JPG files are allowed.`);
+        return null; // Skip this file
+      }
+      
       // Check free tier limits for each file
       const limitCheck = checkFreeTierLimits(file);
       
@@ -269,7 +319,12 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         uploadSuccess: false,
         limitExceeded: false,
       };
-    });
+    }).filter((file) => file !== null) as UploadedFile[]; // Filter out null values from invalid file types
+    
+    // Early return if all files were invalid
+    if (newFiles.length === 0) {
+      return;
+    }
     
     setFiles((prev) => [...prev, ...newFiles]);
 
@@ -318,7 +373,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
             setFiles((prev) => {
               const updatedFiles = prev.map((f) =>
                 f.id === uploadedFile.id
-                  ? { ...f, uploading: false, uploadSuccess: true, checked: true, firestoreId }
+                  ? { ...f, uploading: false, uploadSuccess: true, checked: false, firestoreId }
                   : f
               );
               // Save to localStorage after successful upload
@@ -332,7 +387,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
             setFiles((prev) => {
               const updatedFiles = prev.map((f) =>
                 f.id === uploadedFile.id
-                  ? { ...f, uploading: false, uploadSuccess: true, checked: true }
+                  ? { ...f, uploading: false, uploadSuccess: true, checked: false }
                   : f
               );
               saveFilesToStorage(updatedFiles);
@@ -360,6 +415,21 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
 
   const toggleFileCheck = (id: string) => {
     setFiles((prev) => {
+      const fileToToggle = prev.find(f => f.id === id);
+      if (!fileToToggle) return prev;
+
+      const isChecking = !fileToToggle.checked;
+
+      // For free tier users, limit to 1 checked file
+      if (user?.plan === 'free' && isChecking) {
+        const currentlyCheckedCount = prev.filter(f => f.checked && f.id !== id).length;
+
+        if (currentlyCheckedCount >= 1) {
+          toast.error('Free plan allows only 1 file to be selected at a time. Upgrade to Pro for unlimited selections!');
+          return prev;
+        }
+      }
+
       const updatedFiles = prev.map((file) =>
         file.id === id ? { ...file, checked: !file.checked } : file
       );
@@ -438,7 +508,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
             Drag & drop your files here
           </p>
           <p className="text-xs text-muted-foreground mb-4">
-            PDF, DOCX, TXT up to 10MB
+            PDF, CSV, PNG, JPG only
           </p>
           <input
             type="file"
@@ -446,7 +516,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
             className="hidden"
             multiple
             onChange={handleFileInput}
-            accept=".pdf,.docx,.txt"
+            accept=".pdf,.csv,.png,.jpg,.jpeg"
           />
           <Button
             variant="outline"
@@ -459,7 +529,16 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
 
         {files.length > 0 && (
           <div className="mt-6 space-y-2">
-            <h3 className="text-sm font-medium text-foreground mb-3">Uploaded Files</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-foreground">Uploaded Files</h3>
+              {user?.plan === 'free' && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>PDF: {files.filter(f => f.uploadSuccess && getFileCategoryFromType(f.fileType) === 'pdf').length}/{FREE_TIER_LIMITS.pdf.maxFiles}</div>
+                  <div>Images: {files.filter(f => f.uploadSuccess && getFileCategoryFromType(f.fileType) === 'image').length}/{FREE_TIER_LIMITS.image.maxFiles}</div>
+                  <div>CSV: {files.filter(f => f.uploadSuccess && getFileCategoryFromType(f.fileType) === 'csv').length}/{FREE_TIER_LIMITS.csv.maxFiles}</div>
+                </div>
+              )}
+            </div>
             {files.map((file) => (
               <Card key={file.id} className="p-3 bg-card border-border">
                 <div className="flex items-start justify-between gap-2">
