@@ -2,11 +2,13 @@ import { Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiles } from "@/contexts/FilesContext";
 import { toast } from "sonner";
 import { saveChatMessage, getUserChatMessages } from "@/lib/firestoreService";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Message {
   id: string;
@@ -27,6 +29,17 @@ export const ChatInterface = () => {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const { user } = useAuth();
   const { checkedFiles } = useFiles();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom function
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // Load chat history from Firestore when user logs in
   useEffect(() => {
@@ -119,8 +132,65 @@ export const ChatInterface = () => {
       if (response.ok) {
         const result = await response.json();
         
-        // Get the actual response from webhook
-        const assistantContent = result.response || result.message || "I received your question and I'm processing it. I'll provide an answer based on your uploaded materials!";
+        console.log('=== WEBHOOK RESPONSE ===');
+        console.log('Full response:', JSON.stringify(result, null, 2));
+        console.log('Response type:', Array.isArray(result) ? 'array' : typeof result);
+        
+        let assistantContent = "";
+        
+        // Handle array format with nested output
+        if (Array.isArray(result)) {
+          console.log('Response is an array with', result.length, 'items');
+          
+          // Look for Summarization output
+          for (const item of result) {
+            console.log('Item structure:', Object.keys(item));
+            
+            if (item.output && typeof item.output === 'object') {
+              console.log('Processing output item, from:', item.output.from);
+              console.log('Has output.output?', !!item.output.output);
+              
+              // Check if it's from Summarization
+              if (item.output.from === 'Summarization' && item.output.output) {
+                console.log('✅ Found Summarization output, length:', item.output.output.length);
+                assistantContent = item.output.output;
+                break; // Use first Summarization found
+              }
+              // Fallback to model output
+              else if (item.output.from === 'model' && item.output.output && !assistantContent) {
+                console.log('Found model output');
+                assistantContent = item.output.output;
+              }
+            }
+          }
+        }
+        // Handle single object format
+        else if (result.output && typeof result.output === 'object') {
+          console.log('Response is a single object with output');
+          console.log('Output from:', result.output.from);
+          
+          if (result.output.from === 'Summarization' && result.output.output) {
+            console.log('✅ Found Summarization in single object');
+            assistantContent = result.output.output;
+          } else if (result.output.output) {
+            console.log('Found output in single object');
+            assistantContent = result.output.output;
+          }
+        }
+        // Handle old format
+        else if (result.response || result.message) {
+          console.log('Using old format (response/message)');
+          assistantContent = result.response || result.message;
+        }
+        
+        // Fallback if no content found
+        if (!assistantContent || assistantContent.trim() === "") {
+          console.log('⚠️ No content found, using fallback');
+          assistantContent = "I received your question and I'm processing it. I'll provide an answer based on your uploaded materials!";
+        }
+        
+        console.log('✅ Final content length:', assistantContent.length);
+        console.log('First 100 chars:', assistantContent.substring(0, 100));
         
         // Remove typing indicator and add actual response
         setMessages((prev) => {
@@ -232,12 +302,19 @@ export const ChatInterface = () => {
                       <div className="w-2 h-2 bg-foreground/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                       <div className="w-2 h-2 bg-foreground/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
+                  ) : message.role === "assistant" ? (
+                    <div className="text-sm leading-relaxed prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-white prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-p:text-gray-200 prose-strong:text-white prose-ul:text-gray-200 prose-ol:text-gray-200 prose-li:text-gray-200 prose-code:text-cyan-400 prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-900 prose-pre:text-cyan-300">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                   )}
                 </Card>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </>
         )}
       </div>
