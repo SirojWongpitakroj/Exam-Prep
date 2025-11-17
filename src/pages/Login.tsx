@@ -24,9 +24,10 @@ const Login = () => {
       const user = result.user;
       const email = user.email || "user@example.com";
       const name = user.displayName || "User";
+      const id = user.uid;
       
       // Store authentication state
-      login(email, name);
+      login(email, name, id);
       
       toast.success(`Welcome, ${name}!`);
       navigate("/");

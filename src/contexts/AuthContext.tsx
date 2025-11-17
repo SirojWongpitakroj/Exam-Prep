@@ -5,13 +5,16 @@ import { auth } from "@/lib/firebase";
 interface User {
   email: string;
   name: string;
+  id: string;
+  plan: "free" | "pro";
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, name: string) => void;
+  login: (email: string, name: string, id: string) => void;
   logout: () => void;
+  updatePlan: (plan: "free" | "pro") => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,14 +31,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // User is signed in with Firebase
         const email = firebaseUser.email || "user@example.com";
         const name = firebaseUser.displayName || "User";
+        const id = firebaseUser.uid;
+        const storedPlan = localStorage.getItem("userPlan") as "free" | "pro" | null;
+        const plan = storedPlan || "free";
         
-        setUser({ email, name });
+        setUser({ email, name, id, plan });
         setIsAuthenticated(true);
         
         // Also store in localStorage as backup
         localStorage.setItem("isAuthenticated", "true");
         localStorage.setItem("userEmail", email);
         localStorage.setItem("userName", name);
+        localStorage.setItem("userId", id);
+        if (!storedPlan) {
+          localStorage.setItem("userPlan", "free");
+        }
       } else {
         // User is signed out
         setUser(null);
@@ -45,6 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem("isAuthenticated");
         localStorage.removeItem("userEmail");
         localStorage.removeItem("userName");
+        localStorage.removeItem("userId");
+        localStorage.removeItem("userPlan");
       }
       setLoading(false);
     });
@@ -53,11 +65,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const login = (email: string, name: string) => {
+  const login = (email: string, name: string, id: string) => {
+    const storedPlan = localStorage.getItem("userPlan") as "free" | "pro" | null;
+    const plan = storedPlan || "free";
+    
     localStorage.setItem("isAuthenticated", "true");
     localStorage.setItem("userEmail", email);
     localStorage.setItem("userName", name);
-    setUser({ email, name });
+    localStorage.setItem("userId", id);
+    localStorage.setItem("userPlan", plan);
+    setUser({ email, name, id, plan });
     setIsAuthenticated(true);
   };
 
@@ -70,10 +87,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem("isAuthenticated");
       localStorage.removeItem("userEmail");
       localStorage.removeItem("userName");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userPlan");
       setUser(null);
       setIsAuthenticated(false);
     } catch (error) {
       console.error("Logout error:", error);
+    }
+  };
+
+  const updatePlan = (plan: "free" | "pro") => {
+    if (user) {
+      const updatedUser = { ...user, plan };
+      setUser(updatedUser);
+      localStorage.setItem("userPlan", plan);
     }
   };
 
@@ -87,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, login, logout, updatePlan }}>
       {children}
     </AuthContext.Provider>
   );

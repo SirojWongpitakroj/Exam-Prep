@@ -1,9 +1,10 @@
-import { Upload, File, X, ChevronLeft } from "lucide-react";
+import { Upload, File, X, ChevronLeft, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UploadedFile {
   id: string;
@@ -11,6 +12,8 @@ interface UploadedFile {
   size: string;
   checked: boolean;
   file: File;
+  uploading?: boolean;
+  uploadSuccess?: boolean;
 }
 
 interface FileUploadSidebarProps {
@@ -21,6 +24,7 @@ interface FileUploadSidebarProps {
 export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadSidebarProps) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const { user } = useAuth();
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -53,8 +57,10 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       size: (file.size / 1024).toFixed(2) + " KB",
-      checked: true,
+      checked: false,
       file: file,
+      uploading: true,
+      uploadSuccess: false,
     }));
     setFiles((prev) => [...prev, ...newFiles]);
 
@@ -65,15 +71,40 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         formData.append('file', uploadedFile.file);
         formData.append('fileName', uploadedFile.name);
         formData.append('fileSize', uploadedFile.size);
+        formData.append('fileType', uploadedFile.file.type);
+        formData.append('user_id', user?.id || 'guest');
+        formData.append('userPlan', user?.plan || 'free');
         
-        await fetch('https://siroj6253.app.n8n.cloud/webhook-test/upload-file', {
+        const response = await fetch('https://siroj6253.app.n8n.cloud/webhook-test/5b30d074-175b-4407-90b0-e638ad0f5026', {
           method: 'POST',
           body: formData,
         });
         
-        toast.success(`${uploadedFile.name} uploaded successfully`);
+        const result = await response.json();
+        
+        if (result.success) {
+          // Update file status to success
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === uploadedFile.id
+                ? { ...f, uploading: false, uploadSuccess: true, checked: true }
+                : f
+            )
+          );
+          toast.success(`${uploadedFile.name} uploaded successfully`);
+        } else {
+          throw new Error('Upload failed');
+        }
       } catch (error) {
         console.error('Error uploading file:', error);
+        // Update file status to failed
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === uploadedFile.id
+              ? { ...f, uploading: false, uploadSuccess: false }
+              : f
+          )
+        );
         toast.error(`Failed to upload ${uploadedFile.name}`);
       }
     }
@@ -166,15 +197,26 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
               <Card key={file.id} className="p-3 bg-card border-border">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <Checkbox
-                      checked={file.checked}
-                      onCheckedChange={() => toggleFileCheck(file.id)}
-                      className="mt-0.5 flex-shrink-0"
-                    />
+                    {file.uploading ? (
+                      <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-primary" />
+                    ) : file.uploadSuccess ? (
+                      <Checkbox
+                        checked={file.checked}
+                        onCheckedChange={() => toggleFileCheck(file.id)}
+                        className="mt-0.5 flex-shrink-0"
+                      />
+                    ) : (
+                      <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-destructive" />
+                    )}
                     <File className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-foreground truncate">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">{file.size}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {file.size}
+                        {file.uploading && " • Uploading..."}
+                        {!file.uploading && file.uploadSuccess && " • Ready"}
+                        {!file.uploading && !file.uploadSuccess && " • Failed"}
+                      </p>
                     </div>
                   </div>
                   <Button
@@ -182,6 +224,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
                     size="sm"
                     onClick={() => removeFile(file.id)}
                     className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                    disabled={file.uploading}
                   >
                     <X className="w-4 h-4" />
                   </Button>

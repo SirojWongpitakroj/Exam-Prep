@@ -50,8 +50,17 @@ const Profile = () => {
               <p className="text-muted-foreground">{user?.email || "user@example.com"}</p>
             </div>
             <div>
+              <label className="text-sm font-medium text-foreground">User ID</label>
+              <p className="text-muted-foreground text-xs">{user?.id || "N/A"}</p>
+            </div>
+            <div>
               <label className="text-sm font-medium text-foreground">Plan</label>
-              <p className="text-muted-foreground">Premium Plan</p>
+              <div className="flex items-center gap-2">
+                <p className="text-muted-foreground capitalize">{user?.plan || "free"} Plan</p>
+                <Button asChild variant="link" size="sm" className="h-auto p-0">
+                  <Link to="/pricing">Change Plan</Link>
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
