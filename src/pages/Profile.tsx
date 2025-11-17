@@ -1,9 +1,20 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, User } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowLeft, User, LogOut } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 const Profile = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    toast.success("Logged out successfully");
+    navigate("/login");
+  };
+
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-4xl mx-auto">
@@ -19,20 +30,28 @@ const Profile = () => {
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
               <User className="w-8 h-8 text-primary" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-2xl font-bold text-foreground">Profile</h1>
               <p className="text-muted-foreground">Manage your account settings</p>
             </div>
+            <Button variant="destructive" onClick={handleLogout} className="gap-2">
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
           </div>
 
           <div className="space-y-4">
             <div>
+              <label className="text-sm font-medium text-foreground">Name</label>
+              <p className="text-muted-foreground">{user?.name || "User"}</p>
+            </div>
+            <div>
               <label className="text-sm font-medium text-foreground">Email</label>
-              <p className="text-muted-foreground">user@example.com</p>
+              <p className="text-muted-foreground">{user?.email || "user@example.com"}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">Plan</label>
-              <p className="text-muted-foreground">Free Plan</p>
+              <p className="text-muted-foreground">Premium Plan</p>
             </div>
           </div>
         </Card>
