@@ -51,7 +51,7 @@ interface PersistedFileData {
 const FREE_TIER_LIMITS = {
   pdf: { maxFiles: 3, maxSizeMB: 5 },
   image: { maxFiles: 5, maxSizeMB: 1 },
-  csv: { maxFiles: 1, maxRows: 500 },
+  csv: { maxFiles: 1, maxSizeKB: 500 }, // 500KB for CSV files
 };
 
 interface FileUploadSidebarProps {
@@ -227,6 +227,7 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
 
     const category = getFileCategory(newFile);
     const fileSizeMB = newFile.size / (1024 * 1024);
+    const fileSizeKB = newFile.size / 1024;
 
     // Check file size limits first
     if (category === 'pdf' && fileSizeMB > FREE_TIER_LIMITS.pdf.maxSizeMB) {
@@ -239,6 +240,12 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
       return { 
         allowed: false, 
         reason: `Image files must be under ${FREE_TIER_LIMITS.image.maxSizeMB}MB on free plan` 
+      };
+    }
+    if (category === 'csv' && fileSizeKB > FREE_TIER_LIMITS.csv.maxSizeKB) {
+      return { 
+        allowed: false, 
+        reason: `CSV files must be under ${FREE_TIER_LIMITS.csv.maxSizeKB}KB on free plan` 
       };
     }
 

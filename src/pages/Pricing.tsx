@@ -27,17 +27,37 @@ const Pricing = () => {
     {
       name: "Free",
       price: "$0",
-      features: ["5 file uploads per month", "Basic AI chat", "Limited quiz generation"],
+      features: [
+        "3 PDF files (< 5MB each)",
+        "5 PNG/JPG images (< 1MB each)",
+        "1 CSV file (< 500KB)",
+        "3 chat messages",
+        "1 quiz generation",
+        "Basic AI chat"
+      ],
     },
     {
       name: "Pro",
       price: "$9.99",
-      features: ["Unlimited file uploads", "Advanced AI chat", "Unlimited quiz generation", "Priority support"],
+      features: [
+        "10 files per day (< 20MB each)",
+        "Advanced AI chat",
+        "More vector dimensions",
+        "10 quizzes per day",
+        "Priority support",
+        "Faster response times"
+      ],
     },
     {
       name: "Enterprise",
       price: "Custom",
-      features: ["Everything in Pro", "Custom integrations", "Dedicated support", "Team collaboration"],
+      features: [
+        "Everything in Pro",
+        "Unlimited usage",
+        "Custom integrations",
+        "Dedicated support",
+        "Team collaboration"
+      ],
     },
   ];
 

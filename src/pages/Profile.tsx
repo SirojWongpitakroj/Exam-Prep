@@ -4,7 +4,6 @@ import { ArrowLeft, User, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { TestEmailButton } from "@/components/TestEmailButton";
 
 const Profile = () => {
   const { user, logout } = useAuth();
@@ -63,14 +62,6 @@ const Profile = () => {
                 </Button>
               </div>
             </div>
-          </div>
-
-          <div className="mt-8 pt-8 border-t border-border">
-            <h2 className="text-lg font-semibold text-foreground mb-4">Email Notifications</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Test the daily quiz reminder email system. This will send reminder emails to all users who have generated quizzes.
-            </p>
-            <TestEmailButton />
           </div>
         </Card>
       </div>

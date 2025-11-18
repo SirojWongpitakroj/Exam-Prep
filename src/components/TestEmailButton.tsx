@@ -66,15 +66,24 @@ export const TestEmailButton = () => {
       }
     } catch (error: any) {
       console.error("❌ Error sending test email:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        details: error.details
+      });
       
       if (error.code === "functions/not-found") {
-        toast.error("Email function not deployed yet. Please deploy functions first.");
+        toast.error("Email function not deployed. Please contact administrator.");
       } else if (error.code === "functions/unauthenticated") {
         toast.error("Please sign in to test emails");
       } else if (error.code === "functions/failed-precondition") {
-        toast.error(error.message || "Cannot send email");
+        toast.error(error.message || "Cannot send email - missing requirements");
+      } else if (error.code === "functions/internal") {
+        // Better error message for internal errors
+        const errorMsg = error.message || "Email service not configured";
+        toast.error(`Email failed: ${errorMsg}. Please check email configuration.`);
       } else {
-        toast.error(error.message || "Failed to send test email");
+        toast.error(error.message || "Failed to send test email. Check console for details.");
       }
     } finally {
       setIsLoading(false);
