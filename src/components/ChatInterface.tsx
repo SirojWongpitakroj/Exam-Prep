@@ -1,14 +1,16 @@
-import { Send, Sparkles } from "lucide-react";
+import { Send, Sparkles, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFiles } from "@/contexts/FilesContext";
+import { useQuiz } from "@/contexts/QuizContext";
 import { toast } from "sonner";
-import { saveChatMessage, getUserChatMessages } from "@/lib/firestoreService";
+import { saveChatMessage, getUserChatMessages, saveQuizToFirestore, canUserChat, canUserGenerateQuiz, incrementChatCount, incrementQuizCount } from "@/lib/firestoreService";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { testQuizSave } from "@/lib/testQuizFirestore";
 
 interface Message {
   id: string;
@@ -29,6 +31,7 @@ export const ChatInterface = () => {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const { user } = useAuth();
   const { checkedFiles } = useFiles();
+  const { setCurrentQuiz } = useQuiz();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom function
@@ -82,6 +85,13 @@ export const ChatInterface = () => {
   const handleSend = async () => {
     if (!input.trim() || isLoading || !user?.id) return;
 
+    // Check if user can send chat message (free tier limit)
+    const chatPermission = await canUserChat(user.id, user.plan || 'free');
+    if (!chatPermission.allowed) {
+      toast.error(chatPermission.reason || 'Chat limit reached');
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -109,8 +119,16 @@ export const ChatInterface = () => {
         content: currentInput,
       });
 
+      // Increment chat count for usage tracking
+      try {
+        await incrementChatCount(user.id);
+        console.log('📊 Chat count incremented');
+      } catch (error) {
+        console.error('Failed to increment chat count:', error);
+      }
+
       // Send message to webhook and WAIT for response
-      const response = await fetch('https://siroj6253.app.n8n.cloud/webhook-test/c5b0185d-0f9d-4d13-ad53-12aa607eedfa', {
+      const response = await fetch('https://siroj6253.app.n8n.cloud/webhook/c5b0185d-0f9d-4d13-ad53-12aa607eedfa', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -192,6 +210,186 @@ export const ChatInterface = () => {
         console.log('✅ Final content length:', assistantContent.length);
         console.log('First 100 chars:', assistantContent.substring(0, 100));
         
+        // Check for quiz in the response
+        console.log('=== CHECKING FOR QUIZ ===');
+        console.log('Is array?', Array.isArray(result));
+        let quizDetected = false;
+        let quizQuestions: any[] = [];
+        
+        if (Array.isArray(result)) {
+          console.log('Array length:', result.length);
+          for (const item of result) {
+            console.log('Checking item:', item);
+            if (item.output && typeof item.output === 'object') {
+              console.log('Item has output, from field:', item.output.from);
+              console.log('Has quizzes?', !!item.output.quizzes);
+              
+              // Check if "from" contains "Quiz"
+              if (item.output.from && typeof item.output.from === 'string' && item.output.from.toLowerCase().includes('quiz')) {
+                console.log('🎯 Quiz detected! From:', item.output.from);
+                
+                // Check if user can generate quiz (free tier limit)
+                const quizPermission = await canUserGenerateQuiz(user.id, user.plan || 'free');
+                if (!quizPermission.allowed) {
+                  console.warn('⚠️ Quiz generation limit reached');
+                  toast.error(quizPermission.reason || 'Quiz generation limit reached');
+                  assistantContent = quizPermission.reason || 'You have reached your quiz generation limit. Upgrade to Pro for unlimited quizzes!';
+                  break;
+                }
+                
+                quizDetected = true;
+                
+                // Parse quiz data - handle different formats
+                let rawQuizzes: any[] = [];
+                
+                // Format 1: item.output.quizzes array
+                if (item.output.quizzes && Array.isArray(item.output.quizzes)) {
+                  rawQuizzes = item.output.quizzes;
+                  console.log('📋 Found quizzes in item.output.quizzes');
+                }
+                // Format 2: item.output itself has question/options
+                else if (item.output.question && item.output.options) {
+                  rawQuizzes = [item.output];
+                  console.log('📋 Found quiz in item.output directly');
+                }
+                // Format 3: item has quizzes at root level
+                else if (item.quizzes && Array.isArray(item.quizzes)) {
+                  rawQuizzes = item.quizzes;
+                  console.log('📋 Found quizzes in item.quizzes');
+                }
+                
+                console.log('📋 Raw quizzes array:', JSON.stringify(rawQuizzes, null, 2));
+                console.log('📋 Quizzes array length:', rawQuizzes.length);
+                
+                if (rawQuizzes.length > 0) {
+                  try {
+                    quizQuestions = rawQuizzes
+                      .filter(q => q.question && q.options) // Only valid questions
+                      .map((q: any, index: number) => {
+                        console.log(`Processing question ${index}:`, JSON.stringify(q, null, 2));
+                        
+                        // Find correct answer index
+                        let correctAnswerIndex = 0;
+                        if (typeof q.answer === 'string') {
+                          correctAnswerIndex = q.options.findIndex((opt: string) => 
+                            opt.toLowerCase().trim() === q.answer.toLowerCase().trim()
+                          );
+                          if (correctAnswerIndex === -1) correctAnswerIndex = 0;
+                        } else if (typeof q.answer === 'number') {
+                          correctAnswerIndex = q.answer;
+                        }
+                        
+                        return {
+                          id: `q-${Date.now()}-${index}`,
+                          question: q.question,
+                          options: q.options,
+                          correctAnswer: correctAnswerIndex,
+                          explanation: q.explanation || undefined,
+                        };
+                      });
+                    
+                    console.log('📝 Parsed quiz questions:', quizQuestions.length);
+                    
+                    if (quizQuestions.length > 0) {
+                      console.log('Quiz questions data:', JSON.stringify(quizQuestions, null, 2));
+                      
+                      // Get file names from checked files
+                      const fileNames = checkedFiles.map(f => f.fileName).join(', ') || 'General Quiz';
+                      
+                      console.log('Attempting to save quiz to Firestore...');
+                      console.log('User ID:', user.id);
+                      console.log('Quiz title:', `Quiz - ${fileNames}`);
+                      
+                      // Prepare quiz data
+                      const quizData = {
+                        id: `quiz-${Date.now()}`,
+                        user_id: user.id,
+                        title: `Quiz - ${fileNames}`,
+                        questions: quizQuestions,
+                        createdAt: new Date(),
+                        userPlan: user.plan || 'free',
+                      };
+                      
+                      // Save to localStorage FIRST (always works)
+                      try {
+                        const storageKey = `quiz_${user.id}_latest`;
+                        localStorage.setItem(storageKey, JSON.stringify(quizData));
+                        console.log('💾 Quiz saved to localStorage');
+                      } catch (storageError) {
+                        console.error('Failed to save to localStorage:', storageError);
+                      }
+                      
+                      // Try to save to Firestore with retry logic
+                      let firestoreId = quizData.id;
+                      let firestoreSaved = false;
+                      
+                      for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                          console.log(`📤 Attempting Firestore save (attempt ${attempt}/3)...`);
+                          
+                          firestoreId = await saveQuizToFirestore({
+                            user_id: user.id,
+                            title: `Quiz - ${fileNames}`,
+                            questions: quizQuestions,
+                            userPlan: user.plan || 'free',
+                          });
+                          
+                          console.log('✅ Quiz saved to Firestore with ID:', firestoreId);
+                          quizData.id = firestoreId; // Update with Firestore ID
+                          firestoreSaved = true;
+                          break; // Success, exit retry loop
+                        } catch (saveError: any) {
+                          console.error(`❌ Firestore save attempt ${attempt} failed:`, saveError);
+                          console.error('Error details:', {
+                            message: saveError?.message,
+                            code: saveError?.code,
+                            name: saveError?.name,
+                          });
+                          
+                          if (attempt === 3) {
+                            console.log('⚠️ All Firestore save attempts failed');
+                            console.log('✅ Quiz still available from localStorage');
+                          } else {
+                            // Wait before retry
+                            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                          }
+                        }
+                      }
+                      
+                      if (!firestoreSaved) {
+                        console.warn('⚠️ Quiz saved to localStorage only, not Firestore');
+                      }
+                      
+                      // Increment quiz count for usage tracking
+                      try {
+                        await incrementQuizCount(user.id);
+                        console.log('📊 Quiz count incremented');
+                      } catch (error) {
+                        console.error('Failed to increment quiz count:', error);
+                      }
+                      
+                      // Set current quiz in context (works either way)
+                      setCurrentQuiz(quizData);
+                      
+                      toast.success('Quiz generated! Click "View Quiz" to start.');
+                      
+                      // Update assistant content to indicate quiz was generated
+                      assistantContent = "I've generated a quiz for you based on your materials! Click the **View Quiz** button to start taking the quiz.";
+                    } else {
+                      console.warn('⚠️ No valid questions found in quiz data');
+                    }
+                  } catch (quizError) {
+                    console.error('Error parsing quiz:', quizError);
+                  }
+                } else {
+                  console.warn('⚠️ Quiz detected but quizzes array is empty');
+                }
+                break;
+              }
+            }
+          }
+        }
+        
         // Remove typing indicator and add actual response
         setMessages((prev) => {
           const filtered = prev.filter(msg => msg.id !== typingIndicatorId);
@@ -249,6 +447,22 @@ export const ChatInterface = () => {
     }
   };
 
+  const handleTestFirestore = async () => {
+    if (!user?.id) {
+      toast.error("User not authenticated");
+      return;
+    }
+
+    toast.info("Testing Firestore connection...");
+    const result = await testQuizSave(user.id);
+    
+    if (result.success) {
+      toast.success(`Test successful! Quiz ID: ${result.quizId}`);
+    } else {
+      toast.error("Test failed! Check console for details.");
+    }
+  };
+
   const quickPrompts = [
     "Summarize the main points",
     "Create a quiz",
@@ -266,20 +480,34 @@ export const ChatInterface = () => {
         ) : (
           <>
             {messages.length === 1 && (
-              <div className="mb-6">
-                <p className="text-sm text-muted-foreground mb-3">Quick actions:</p>
-                <div className="flex flex-wrap gap-2">
-                  {quickPrompts.map((prompt) => (
-                    <Button
-                      key={prompt}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInput(prompt)}
-                      className="text-xs"
-                    >
-                      {prompt}
-                    </Button>
-                  ))}
+              <div className="mb-6 space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-3">Quick actions:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {quickPrompts.map((prompt) => (
+                      <Button
+                        key={prompt}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInput(prompt)}
+                        className="text-xs"
+                      >
+                        {prompt}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground mb-3">Debug:</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestFirestore}
+                    className="text-xs gap-2"
+                  >
+                    <Bug className="w-3 h-3" />
+                    Test Quiz Firestore
+                  </Button>
                 </div>
               </div>
             )}

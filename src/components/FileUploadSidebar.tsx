@@ -420,12 +420,12 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
 
       const isChecking = !fileToToggle.checked;
 
-      // For free tier users, limit to 1 checked file
-      if (user?.plan === 'free' && isChecking) {
+      // All users can only select 1 file at a time
+      if (isChecking) {
         const currentlyCheckedCount = prev.filter(f => f.checked && f.id !== id).length;
 
         if (currentlyCheckedCount >= 1) {
-          toast.error('Free plan allows only 1 file to be selected at a time. Upgrade to Pro for unlimited selections!');
+          toast.error('Only 1 file can be selected at a time.');
           return prev;
         }
       }

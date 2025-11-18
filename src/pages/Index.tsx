@@ -79,7 +79,6 @@ const Index = () => {
                   size="sm"
                   onClick={handleViewQuiz}
                   className="text-white ml-3 gap-2 bg-gradient-to-r from-purple-400 to-pink-400 hover:from-purple-500 hover:to-pink-500 font-bold brightness-110"
-                  disabled={!hasActiveQuiz}
                 >
                   <BookOpen className="w-4 h-4 text-white opacity-100" />
                   <span className="text-white">View Quiz</span>

@@ -1,4 +1,4 @@
-import { X, CheckCircle2, XCircle, ArrowLeft } from "lucide-react";
+import { X, CheckCircle2, XCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -6,6 +6,9 @@ import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuiz } from "@/contexts/QuizContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { getLatestUserQuiz } from "@/lib/firestoreService";
+import { toast } from "sonner";
 
 interface Question {
   id: string;
@@ -17,17 +20,97 @@ interface Question {
 
 const Quiz = () => {
   const navigate = useNavigate();
-  const { currentQuiz } = useQuiz();
+  const { user } = useAuth();
+  const { currentQuiz, setCurrentQuiz } = useQuiz();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: number }>({});
   const [showResults, setShowResults] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Redirect to home if no quiz available
+  // Load most recent quiz from Firebase or localStorage
   useEffect(() => {
-    if (!currentQuiz || !currentQuiz.questions || currentQuiz.questions.length === 0) {
-      navigate('/');
-    }
-  }, [currentQuiz, navigate]);
+    const loadQuiz = async () => {
+      if (!user?.id) {
+        navigate('/');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        
+        // If quiz is already in context, use it
+        if (currentQuiz && currentQuiz.questions && currentQuiz.questions.length > 0) {
+          console.log('📚 Using quiz from context');
+          setLoading(false);
+          return;
+        }
+        
+        // Try to get latest quiz from Firebase first
+        try {
+          const latestQuiz = await getLatestUserQuiz(user.id);
+          
+          if (latestQuiz && latestQuiz.questions && latestQuiz.questions.length > 0) {
+            console.log('📚 Loaded quiz from Firestore:', latestQuiz.title);
+            setCurrentQuiz({
+              id: latestQuiz.id || '',
+              title: latestQuiz.title,
+              questions: latestQuiz.questions,
+              createdAt: latestQuiz.createdAt,
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (firebaseError) {
+          console.warn('Firebase fetch failed, trying localStorage:', firebaseError);
+        }
+        
+        // Fallback to localStorage
+        try {
+          const storageKey = `quiz_${user.id}_latest`;
+          const storedQuiz = localStorage.getItem(storageKey);
+          
+          if (storedQuiz) {
+            const parsedQuiz = JSON.parse(storedQuiz);
+            if (parsedQuiz.questions && parsedQuiz.questions.length > 0) {
+              console.log('📚 Loaded quiz from localStorage:', parsedQuiz.title);
+              setCurrentQuiz({
+                ...parsedQuiz,
+                createdAt: new Date(parsedQuiz.createdAt),
+              });
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (storageError) {
+          console.error('localStorage fetch failed:', storageError);
+        }
+        
+        // No quiz found anywhere
+        console.log('⚠️ No quiz found in Firestore or localStorage');
+        toast.error('No quiz available. Please generate a quiz first.');
+        navigate('/');
+      } catch (error) {
+        console.error('Error loading quiz:', error);
+        toast.error('Failed to load quiz');
+        navigate('/');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadQuiz();
+  }, [user?.id]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading quiz...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentQuiz || !currentQuiz.questions || currentQuiz.questions.length === 0) {
     return null;
