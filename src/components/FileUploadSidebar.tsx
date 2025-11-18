@@ -17,7 +17,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
-import { saveFileToFirestore, deleteFileFromFirestore } from "@/lib/firestoreService";
+import { 
+  saveFileToFirestore, 
+  deleteFileFromFirestore,
+  canUserUploadFile,
+  incrementFileUploadCount
+} from "@/lib/firestoreService";
 
 interface UploadedFile {
   id: string;
@@ -209,60 +214,44 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
     return 'other';
   };
 
-  // Check if file upload would exceed free tier limits
-  const checkFreeTierLimits = (newFile: File): { allowed: boolean; reason?: string } => {
+  // Check if file upload would exceed free tier limits (cumulative tracking)
+  const checkFreeTierLimits = async (newFile: File): Promise<{ allowed: boolean; reason?: string }> => {
     // Pro users have no limits
     if (user?.plan === 'pro') {
+      return { allowed: true };
+    }
+
+    if (!user?.id) {
       return { allowed: true };
     }
 
     const category = getFileCategory(newFile);
     const fileSizeMB = newFile.size / (1024 * 1024);
 
-    // Count existing files by category
-    const existingFilesByCategory = files.filter(f => 
-      f.uploadSuccess && getFileCategoryFromType(f.fileType) === category
-    );
+    // Check file size limits first
+    if (category === 'pdf' && fileSizeMB > FREE_TIER_LIMITS.pdf.maxSizeMB) {
+      return { 
+        allowed: false, 
+        reason: `PDF files must be under ${FREE_TIER_LIMITS.pdf.maxSizeMB}MB on free plan` 
+      };
+    }
+    if (category === 'image' && fileSizeMB > FREE_TIER_LIMITS.image.maxSizeMB) {
+      return { 
+        allowed: false, 
+        reason: `Image files must be under ${FREE_TIER_LIMITS.image.maxSizeMB}MB on free plan` 
+      };
+    }
 
-    if (category === 'pdf') {
-      // Check file count
-      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.pdf.maxFiles) {
+    // Check cumulative upload count from Firestore (never decrements on delete)
+    if (category !== 'other') {
+      const uploadPermission = await canUserUploadFile(user.id, user.plan, category);
+      
+      if (!uploadPermission.allowed) {
         return { 
           allowed: false, 
-          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.pdf.maxFiles} PDF files` 
+          reason: uploadPermission.reason 
         };
       }
-      // Check file size
-      if (fileSizeMB > FREE_TIER_LIMITS.pdf.maxSizeMB) {
-        return { 
-          allowed: false, 
-          reason: `PDF files must be under ${FREE_TIER_LIMITS.pdf.maxSizeMB}MB on free plan` 
-        };
-      }
-    } else if (category === 'image') {
-      // Check file count
-      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.image.maxFiles) {
-        return { 
-          allowed: false, 
-          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.image.maxFiles} image files` 
-        };
-      }
-      // Check file size
-      if (fileSizeMB > FREE_TIER_LIMITS.image.maxSizeMB) {
-        return { 
-          allowed: false, 
-          reason: `Image files must be under ${FREE_TIER_LIMITS.image.maxSizeMB}MB on free plan` 
-        };
-      }
-    } else if (category === 'csv') {
-      // Check file count
-      if (existingFilesByCategory.length >= FREE_TIER_LIMITS.csv.maxFiles) {
-        return { 
-          allowed: false, 
-          reason: `Free plan allows maximum ${FREE_TIER_LIMITS.csv.maxFiles} CSV file` 
-        };
-      }
-      // Note: Row count check would need to parse CSV, skipping for now
     }
 
     return { allowed: true };
@@ -281,7 +270,8 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
       'image/jpg'
     ];
     
-    const newFiles: UploadedFile[] = Array.from(fileList).map((file) => {
+    // Process files asynchronously to check cumulative limits
+    const newFilesPromises = Array.from(fileList).map(async (file) => {
       // Check file type first (for all users)
       if (!ALLOWED_TYPES.includes(file.type)) {
         hasInvalidFileType = true;
@@ -289,8 +279,8 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         return null; // Skip this file
       }
       
-      // Check free tier limits for each file
-      const limitCheck = checkFreeTierLimits(file);
+      // Check free tier limits for each file (now async)
+      const limitCheck = await checkFreeTierLimits(file);
       
       if (!limitCheck.allowed) {
         hasLimitExceeded = true;
@@ -319,7 +309,9 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
         uploadSuccess: false,
         limitExceeded: false,
       };
-    }).filter((file) => file !== null) as UploadedFile[]; // Filter out null values from invalid file types
+    });
+    
+    const newFiles = (await Promise.all(newFilesPromises)).filter((file) => file !== null) as UploadedFile[];
     
     // Early return if all files were invalid
     if (newFiles.length === 0) {
@@ -368,6 +360,19 @@ export const FileUploadSidebar = ({ isCollapsed, onToggleCollapse }: FileUploadS
               userPlan: user?.plan || 'free',
               fileSizeMB,
             });
+            
+            // Increment cumulative upload count (never decrements on delete)
+            if (user?.id) {
+              try {
+                const category = getFileCategoryFromType(uploadedFile.fileType);
+                if (category !== 'other') {
+                  await incrementFileUploadCount(user.id, category);
+                  console.log(`📊 Incremented ${category} upload count`);
+                }
+              } catch (countError) {
+                console.error('Error incrementing upload count:', countError);
+              }
+            }
             
             // Update file status to success with Firestore ID
             setFiles((prev) => {

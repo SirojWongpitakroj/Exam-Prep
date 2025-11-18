@@ -1,4 +1,4 @@
-import { Send, Sparkles, Bug } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { saveChatMessage, getUserChatMessages, saveQuizToFirestore, canUserChat, canUserGenerateQuiz, incrementChatCount, incrementQuizCount } from "@/lib/firestoreService";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { testQuizSave } from "@/lib/testQuizFirestore";
 
 interface Message {
   id: string;
@@ -447,27 +446,10 @@ export const ChatInterface = () => {
     }
   };
 
-  const handleTestFirestore = async () => {
-    if (!user?.id) {
-      toast.error("User not authenticated");
-      return;
-    }
-
-    toast.info("Testing Firestore connection...");
-    const result = await testQuizSave(user.id);
-    
-    if (result.success) {
-      toast.success(`Test successful! Quiz ID: ${result.quizId}`);
-    } else {
-      toast.error("Test failed! Check console for details.");
-    }
-  };
-
   const quickPrompts = [
     "Summarize the main points",
     "Create a quiz",
     "Explain key concepts",
-    "Generate flashcards",
   ];
 
   return (
@@ -496,18 +478,6 @@ export const ChatInterface = () => {
                       </Button>
                     ))}
                   </div>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-3">Debug:</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTestFirestore}
-                    className="text-xs gap-2"
-                  >
-                    <Bug className="w-3 h-3" />
-                    Test Quiz Firestore
-                  </Button>
                 </div>
               </div>
             )}

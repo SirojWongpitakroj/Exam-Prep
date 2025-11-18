@@ -389,6 +389,10 @@ export interface UserUsage {
   quizCount: number;
   lastChatAt?: Date;
   lastQuizAt?: Date;
+  // File upload tracking (cumulative, never decrements)
+  totalPdfUploads: number;
+  totalImageUploads: number;
+  totalCsvUploads: number;
   userPlan: "free" | "pro";
   createdAt: Date;
   updatedAt: Date;
@@ -413,6 +417,9 @@ export const getUserUsage = async (userId: string): Promise<UserUsage | null> =>
         quizCount: data.quizCount || 0,
         lastChatAt: data.lastChatAt?.toDate(),
         lastQuizAt: data.lastQuizAt?.toDate(),
+        totalPdfUploads: data.totalPdfUploads || 0,
+        totalImageUploads: data.totalImageUploads || 0,
+        totalCsvUploads: data.totalCsvUploads || 0,
         userPlan: data.userPlan || 'free',
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -433,6 +440,9 @@ export const initializeUserUsage = async (userId: string, userPlan: "free" | "pr
       user_id: userId,
       chatCount: 0,
       quizCount: 0,
+      totalPdfUploads: 0,
+      totalImageUploads: 0,
+      totalCsvUploads: 0,
       userPlan: userPlan,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -575,6 +585,100 @@ export const canUserGenerateQuiz = async (userId: string, userPlan: "free" | "pr
     };
   } catch (error) {
     console.error("Error checking quiz permission:", error);
+    return { allowed: true }; // Allow on error
+  }
+};
+
+// Increment file upload count (cumulative, never decrements)
+export const incrementFileUploadCount = async (
+  userId: string, 
+  fileType: 'pdf' | 'image' | 'csv'
+): Promise<void> => {
+  try {
+    const q = query(
+      collection(db, "user_usage"),
+      where("user_id", "==", userId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (!querySnapshot.empty) {
+      const docRef = doc(db, "user_usage", querySnapshot.docs[0].id);
+      const currentData = querySnapshot.docs[0].data();
+      
+      const fieldName = fileType === 'pdf' ? 'totalPdfUploads' 
+                      : fileType === 'image' ? 'totalImageUploads'
+                      : 'totalCsvUploads';
+      
+      await updateDoc(docRef, {
+        [fieldName]: (currentData[fieldName] || 0) + 1,
+        updatedAt: Timestamp.now(),
+      });
+      
+      console.log(`📊 Incremented ${fieldName} for user ${userId}`);
+    }
+  } catch (error) {
+    console.error("Error incrementing file upload count:", error);
+    throw error;
+  }
+};
+
+// Check if user can upload file (free tier limits - cumulative, never resets on delete)
+export const canUserUploadFile = async (
+  userId: string, 
+  userPlan: "free" | "pro", 
+  fileType: 'pdf' | 'image' | 'csv'
+): Promise<{ allowed: boolean; remaining?: number; reason?: string }> => {
+  try {
+    // Pro users have unlimited uploads
+    if (userPlan === 'pro') {
+      return { allowed: true };
+    }
+    
+    // Get usage data
+    let usage = await getUserUsage(userId);
+    
+    // Initialize if doesn't exist
+    if (!usage) {
+      await initializeUserUsage(userId, userPlan);
+      usage = await getUserUsage(userId);
+    }
+    
+    if (!usage) {
+      return { allowed: true }; // Allow on error
+    }
+    
+    // Free tier limits (cumulative - counts all uploads ever, not just current files)
+    const limits = {
+      pdf: 3,
+      image: 5,
+      csv: 1,
+    };
+    
+    const currentCount = fileType === 'pdf' ? usage.totalPdfUploads
+                       : fileType === 'image' ? usage.totalImageUploads
+                       : usage.totalCsvUploads;
+    
+    const limit = limits[fileType];
+    
+    if (currentCount >= limit) {
+      const fileTypeName = fileType === 'pdf' ? 'PDF files'
+                         : fileType === 'image' ? 'images'
+                         : 'CSV files';
+      
+      return {
+        allowed: false,
+        remaining: 0,
+        reason: `Free plan limit reached (${limit} ${fileTypeName} total). Upgrade to Pro for unlimited uploads!`
+      };
+    }
+    
+    return {
+      allowed: true,
+      remaining: limit - currentCount
+    };
+  } catch (error) {
+    console.error("Error checking file upload permission:", error);
     return { allowed: true }; // Allow on error
   }
 };

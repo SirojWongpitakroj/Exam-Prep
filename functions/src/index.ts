@@ -375,7 +375,7 @@ export const sendDailyQuizReminders = functions.pubsub
   });
 
 /**
- * Manual trigger function for testing
+ * Manual trigger function for testing - sends to ALL users with quizzes
  * Call this function to test email sending without waiting for the schedule
  * 
  * Usage: firebase functions:call sendQuizRemindersManual
@@ -419,6 +419,84 @@ export const sendQuizRemindersManual = functions.https.onCall(
     } catch (error: any) {
       console.error("Error sending reminders:", error);
       throw new functions.https.HttpsError("internal", error.message);
+    }
+  }
+);
+
+/**
+ * Send email reminder to CURRENT USER only
+ * This is triggered by the test button in the Profile page
+ * Sends email immediately to the user who clicked the button
+ */
+export const sendTestEmailToMe = functions.https.onCall(
+  async (data, context) => {
+    // Verify the user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "User must be authenticated to send test email"
+      );
+    }
+
+    const userId = context.auth.uid;
+    console.log("📧 Sending test email to current user:", userId);
+
+    try {
+      // Get user details from Firebase Auth
+      const userRecord = await admin.auth().getUser(userId);
+      
+      if (!userRecord.email) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "User does not have an email address"
+        );
+      }
+
+      const user: User = {
+        id: userId,
+        email: userRecord.email,
+        name: userRecord.displayName || "User",
+        plan: "free", // Default, you can fetch from Firestore if stored
+      };
+
+      // Get the latest quiz for this user
+      const quiz = await getLatestQuizForUser(userId);
+
+      if (!quiz) {
+        return {
+          success: false,
+          message: "No quiz found. Please generate a quiz first to receive email reminders.",
+        };
+      }
+
+      // Send email
+      const sent = await sendQuizReminderEmail(user, quiz);
+
+      if (sent) {
+        console.log(`✅ Test email sent successfully to ${user.email}`);
+        return {
+          success: true,
+          message: `Test email sent to ${user.email}!`,
+          email: user.email,
+          quizTitle: quiz.title,
+        };
+      } else {
+        throw new functions.https.HttpsError(
+          "internal",
+          "Failed to send email"
+        );
+      }
+    } catch (error: any) {
+      console.error("❌ Error sending test email:", error);
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(
+        "internal",
+        `Error sending test email: ${error.message}`
+      );
     }
   }
 );

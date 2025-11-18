@@ -8,13 +8,13 @@ import { useAuth } from "@/contexts/AuthContext";
 /**
  * Test Email Button Component
  * 
- * This button allows you to manually trigger the daily email reminder
- * without waiting for the scheduled time (7 AM).
+ * This button sends a test email reminder to the CURRENT USER ONLY (not all users).
+ * The email is sent immediately when clicked.
  * 
  * Usage:
  * - Add this button to your Profile page or Settings page
  * - Only visible to authenticated users
- * - Sends quiz reminder emails to all users with quizzes
+ * - Sends quiz reminder email to the user who clicks it
  * 
  * To use:
  * 1. Import this component: import { TestEmailButton } from "@/components/TestEmailButton";
@@ -33,34 +33,48 @@ export const TestEmailButton = () => {
     setIsLoading(true);
     
     try {
-      console.log("🔔 Triggering manual email reminder...");
+      console.log("📧 Sending test email to current user...");
       
       const functions = getFunctions();
-      const sendReminders = httpsCallable(functions, "sendQuizRemindersManual");
+      const sendTestEmail = httpsCallable(functions, "sendTestEmailToMe");
       
-      const result = await sendReminders();
+      const result = await sendTestEmail();
       
       console.log("✅ Email test result:", result);
       
       if (result.data && typeof result.data === 'object' && 'success' in result.data) {
-        const data = result.data as { success: boolean; message: string };
+        const data = result.data as { 
+          success: boolean; 
+          message: string; 
+          email?: string;
+          quizTitle?: string;
+        };
+        
         if (data.success) {
-          toast.success(data.message || "Test emails sent successfully!");
+          toast.success(data.message || "Test email sent successfully!");
+          if (data.email) {
+            console.log(`📨 Email sent to: ${data.email}`);
+          }
+          if (data.quizTitle) {
+            console.log(`📚 Quiz: ${data.quizTitle}`);
+          }
         } else {
-          toast.error("Failed to send test emails");
+          toast.error(data.message || "Failed to send test email");
         }
       } else {
-        toast.success("Test email function triggered successfully!");
+        toast.success("Test email sent successfully!");
       }
     } catch (error: any) {
-      console.error("❌ Error sending test emails:", error);
+      console.error("❌ Error sending test email:", error);
       
       if (error.code === "functions/not-found") {
         toast.error("Email function not deployed yet. Please deploy functions first.");
       } else if (error.code === "functions/unauthenticated") {
         toast.error("Please sign in to test emails");
+      } else if (error.code === "functions/failed-precondition") {
+        toast.error(error.message || "Cannot send email");
       } else {
-        toast.error(error.message || "Failed to send test emails");
+        toast.error(error.message || "Failed to send test email");
       }
     } finally {
       setIsLoading(false);
